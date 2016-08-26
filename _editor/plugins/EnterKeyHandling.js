@@ -464,20 +464,38 @@ define([
 				// Okay, we probably have to split.
 				rs = range.startContainer;
 				var firstNodeMoved;
-				if(rs && rs.nodeType == 3){
+				if(rs){
+					console.log('rs', rs, rs.parentNode, rs.textContent);
+					console.log('block', block);
+
 					// Text node, we have to split it.
 					var nodeToMove, tNode;
 					endOffset = range.endOffset;
-					if(rs.length < endOffset){
-						//We are not splitting the right node, try to locate the correct one
-						ret = this._adjustNodeAndOffset(rs, endOffset);
-						rs = ret.node;
-						endOffset = ret.offset;
-					}
 
-					txt = rs.nodeValue;
-					startNode = doc.createTextNode(txt.substring(0, endOffset));
-					endNode = doc.createTextNode(txt.substring(endOffset, txt.length));
+					if (rs.nodeType === 3) {
+						if(rs.length < endOffset){
+							//We are not splitting the right node, try to locate the correct one
+							ret = this._adjustNodeAndOffset(rs, endOffset);
+							rs = ret.node;
+							endOffset = ret.offset;
+						}
+
+						txt = rs.nodeValue;
+						startNode = doc.createTextNode(txt.substring(0, endOffset));
+						endNode = doc.createTextNode(txt.substring(endOffset, txt.length));
+					}
+					else if (rs.nodeType === 1 && rs.firstChild.nodeType === 3 && rs.childNodes.length >= 1) {
+						// split children, as they're already correct
+						console.log('endOffset', range.endOffset);
+						Array.prototype.forEach.call(rs.childNodes, function(node, i) {
+							console.log('node ', i, node.length, node.nodeValue);
+						});
+
+						var firstChildNode = rs.childNodes[endOffset - 1];
+						startNode = doc.createTextNode(firstChildNode.nodeValue);
+						rs.removeChild(firstChildNode);
+						endNode = doc.createTextNode(rs.textContent);
+					}
 
 					// Place the split, then remove original nodes.
 					domConstruct.place(startNode, rs, "before");
@@ -487,41 +505,43 @@ define([
 					// Okay, we split the text.  Now we need to see if we're
 					// parented to the block element we're splitting and if
 					// not, we have to split all the way up.  Ugh.
-					var parentC = startNode.parentNode;
-					while(parentC !== block.blockNode){
-						var tg = parentC.tagName;
-						var newTg = doc.createElement(tg);
-						// Clone over any 'style' data.
-						if(parentC.style){
-							if(newTg.style){
-								if(parentC.style.cssText){
-									newTg.style.cssText = parentC.style.cssText;
+					if (rs.nodeType === 3) {
+						var parentC = startNode.parentNode;
+						while(parentC !== block.blockNode){
+							var tg = parentC.tagName;
+							var newTg = doc.createElement(tg);
+							// Clone over any 'style' data.
+							if(parentC.style){
+								if(newTg.style){
+									if(parentC.style.cssText){
+										newTg.style.cssText = parentC.style.cssText;
+									}
 								}
 							}
-						}
-						// If font also need to clone over any font data.
-						if(parentC.tagName === "FONT"){
-							if(parentC.color){
-								newTg.color = parentC.color;
+							// If font also need to clone over any font data.
+							if(parentC.tagName === "FONT"){
+								if(parentC.color){
+									newTg.color = parentC.color;
+								}
+								if(parentC.face){
+									newTg.face = parentC.face;
+								}
+								if(parentC.size){  // this check was necessary on IE
+									newTg.size = parentC.size;
+								}
 							}
-							if(parentC.face){
-								newTg.face = parentC.face;
-							}
-							if(parentC.size){  // this check was necessary on IE
-								newTg.size = parentC.size;
-							}
-						}
 
-						nodeToMove = endNode;
-						while(nodeToMove){
-							tNode = nodeToMove.nextSibling;
-							newTg.appendChild(nodeToMove);
-							nodeToMove = tNode;
+							nodeToMove = endNode;
+							while(nodeToMove){
+								tNode = nodeToMove.nextSibling;
+								newTg.appendChild(nodeToMove);
+								nodeToMove = tNode;
+							}
+							domConstruct.place(newTg, parentC, "after");
+							startNode = parentC;
+							endNode = newTg;
+							parentC = parentC.parentNode;
 						}
-						domConstruct.place(newTg, parentC, "after");
-						startNode = parentC;
-						endNode = newTg;
-						parentC = parentC.parentNode;
 					}
 
 					// Lastly, move the split out tags to the new block.
@@ -537,6 +557,7 @@ define([
 						tNode = nodeToMove.nextSibling;
 						newblock.appendChild(nodeToMove);
 						nodeToMove = tNode;
+						// nodeToMove = (tNode.nodeValue && tNode) || tNode.nextSibling;
 					}
 				}
 
